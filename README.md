@@ -1,96 +1,129 @@
 # BALANCE
-Boosting Index Advisor Learning with Multi-Source Workload Knowledge
+
+**BALANCE: Boosting Index Advisor Learning with Multi-Source Workload Knowledge**
+
+BALANCE is a deep reinforcement learning (DRL) based **index advisor**. It treats index selection as a sequential decision process: an agent repeatedly proposes indexes for the workload, observes the cost change estimated by PostgreSQL, and learns to configure indexes that minimize workload cost under a given storage budget.
 
 ![Framework overview of BALANCE](./image.png)
 
-Above is the overall architecture of BALANCE, and the code runs on Postgresql 12.5.
-### Code structure
+- **Tested environment**: PostgreSQL 12.5 with the [HypoPG](https://hypopg.readthedocs.io/) extension (for what-if index cost estimation)
+- **Benchmarks**: TPC-H and TPC-DS
+- **RL toolkit**: OpenAI Baselines PPO2 (bundled in `stable_baselines/`)
+- **Pre-trained models**: `main.py` loads three source models from `experiment_results/source/` (`f_s1.zip` - `f_s3.zip`); they are not included in the repo, so place your checkpoints there before running
 
-Top level, grouped by role; the packages that carry most of the logic are expanded below.
+## How it works
+
+The training loop connects the modules below:
+
+```
+main.py                      parses experiments/tpch.json, loads pre-trained source models,
+  |                          builds the PPO2 agent (stable_baselines/ppo2/ppo2_BALANCE.py)
+  v
+balance/experiment.py        sets up the schema, generates workloads, and creates the
+  |                          training / validation / testing environments
+  v
+gym_db/envs/db_env_v1.py     one episode = one workload: the agent adds indexes step by
+  |                          step; after each step PostgreSQL (via HypoPG) re-estimates
+  |                          the workload cost and the reward is computed
+  v
+balance/                     closes the RL loop: observation_manager.py builds the
+                             observation, action_manager.py masks invalid index actions,
+                             reward_calculator.py computes the reward
+```
+
+`src/` provides the value embedder that turns query plans, predicates, and column values into dense features for the observation manager; `index_selection_evaluation/` (an included copy of the [Index Selection Evaluation](https://github.com/hyrise/index_selection_evaluation) toolkit) supplies the PostgreSQL connector, HypoPG what-if index creation, and comparison algorithms (e.g. Extend) underneath.
+
+## Code structure
 
 ```
 BALANCE/
-│
-│  ── Code ─────────────────────────────
-├── main.py                       # Entry point: builds the Experiment and starts PPO training
-├── requirements.txt              # Python dependencies
-├── balance/                      # Core package: experiment setup + RL components
-├── gym_db/                       # Gym environment for index selection
-├── src/                          # Value embedder: multi-source workload knowledge
-├── stable_baselines/             # Bundled OpenAI Baselines (v2), adapted PPO2
-├── index_selection_evaluation/   # DB toolkit: what-if cost evaluation, benchmark kits
-│
-│  ── Configs, data & assets ───────
-├── experiments/                  # JSON experiment configs: tpch.json, tpcds.json
-├── experiment_results/           # Saved models and generated workloads
-├── query_files/                  # Raw benchmark queries: TPCH_1-22, TPCDS_1-99
-├── image.png                     # Architecture figure shown above
-├── box_line.pickle               # Pre-computed predicate value boxes (used by src/)
-└── tpcds_lsi.model               # Pre-trained LSI workload model (+ .projection file)
+|
+|-- main.py                       # Entry point: builds the experiment and starts PPO training
+|-- requirements.txt              # Python dependencies
+|-- image.png                     # Architecture figure shown above
+|-- box_line.pickle               # Pre-computed predicate value boxes (used by src/plan_encoding)
+|-- tpcds_lsi.model               # Pre-trained LSI workload model (+ .projection file)
+|
+|-- balance/                      # Core package: experiment setup and RL components
+|   |-- experiment.py             #   Experiment: config, schema, workloads, envs, train/evaluate
+|   |-- configuration_parser.py   #   Parses and validates the JSON experiment configuration
+|   |-- schema.py                 #   Database schema (tables/columns) on PostgreSQL
+|   |-- workload_generator.py     #   Samples training/validation workloads from query_files/
+|   |-- workload_embedder.py      #   Encodes workloads as vectors (plan-based LSI-BOW, SQL)
+|   |-- embedding_utils.py        #   Helpers for pruning queries during embedding
+|   |-- boo.py                    #   Bag of Operators: query plans -> operator sets
+|   |-- observation_manager.py    #   Builds RL observations (embedded plan + cost features)
+|   |-- action_manager.py         #   Index actions: valid actions under the storage budget
+|   |-- reward_calculator.py      #   Reward from cost difference vs. storage consumption
+|   `-- utils.py                  #   Shared utilities
+|
+|-- gym_db/                       # Gym environment for index selection
+|   |-- common.py                 #   EnvironmentType: training / validation / testing
+|   `-- envs/
+|       `-- db_env_v1.py          #   DBEnvV1: one episode = recommend indexes -> measure cost -> reward
+|
+|-- src/                          # Value embedder (multi-source workload knowledge)
+|   |-- parameters.py             #   Global dimensions and IDs of tables/columns/operators
+|   |-- feature_extraction/       #   Feature extraction from plans, predicates, and bitmaps
+|   |-- plan_encoding/            #   Query-plan tree encoding
+|   `-- token_embedding/          #   Word2Vec embedding of query tokens and values
+|
+|-- stable_baselines/             # Bundled OpenAI Baselines (v2)
+|   `-- ppo2/
+|       `-- ppo2_BALANCE.py       #   PPO2 adapted for BALANCE (used by main.py)
+|
+|-- experiments/                  # Experiment configurations
+|   |-- tpch.json                 #   Settings for TPCH
+|   `-- tpcds.json                #   Settings for TPCDS
+|
+|-- experiment_results/           # Saved models and generated workloads
+|   |-- cl_save/gen_model/        #   Pre-trained CL model checkpoint (.pth)
+|   |-- source/                   #   Pre-trained source models for transfer (main.py loads f_s1-f_s3.zip here)
+|   `-- workloads/gen_tpch/       #   Generated TPCH training workloads (.pickle)
+|
+|-- query_files/                  # Raw benchmark query texts
+|   |-- TPCH/                     #   TPCH_1.txt - TPCH_22.txt
+|   `-- TPCDS/                    #   TPCDS_1.txt - TPCDS_99.txt
+|
+`-- index_selection_evaluation/   # Database toolkit: connectors, what-if cost evaluation, benchmark kits
 ```
 
-**`balance/`** — experiment setup and RL components, grouped by responsibility:
+## Getting started
 
-```
-balance/
-│
-│  ── Experiment setup ─────────────
-├── experiment.py                 # Central Experiment class: config, schema, workloads, envs, train/evaluate
-├── configuration_parser.py       # Parses the JSON experiment configuration
-├── schema.py                     # Database schema (tables/columns) on PostgreSQL
-│
-│  ── Workload encoding ────────────
-├── workload_generator.py         # Samples training/validation workloads
-├── workload_embedder.py          # Encodes workloads as vectors (plan-based LSI-BOW, SQL)
-├── embedding_utils.py            # Helpers for pruning queries during embedding
-├── boo.py                        # Bag of Operators: query plans -> operator sets
-│
-│  ── RL interface ─────────────────
-├── observation_manager.py        # Builds RL observations (embedded plan + cost features)
-├── action_manager.py             # Valid index actions under the storage budget
-├── reward_calculator.py          # Reward from cost difference vs. storage consumption
-│
-└── utils.py                      # Shared utilities
-```
+### 1. Prerequisites
 
-**`src/`, `gym_db/`, `stable_baselines/`** — value embedder, Gym environment, and the PPO2 learner:
+- PostgreSQL 12.5 running locally, with the [HypoPG](https://hypopg.readthedocs.io/) extension installed and available (`create extension hypopg`)
+- The connection settings (user / password / host / port) are hard-coded in `index_selection_evaluation/selection/dbms/postgres_dbms.py` - adjust them to your instance
 
-```
-src/
-├── parameters.py                 # Global dimensions and IDs of tables/columns/operators
-├── feature_extraction/           # Features from plans, predicates, and bitmaps
-├── plan_encoding/                # Query-plan tree encoding
-└── token_embedding/              # Word2Vec embedding of query tokens and values
-
-gym_db/
-├── common.py                     # EnvironmentType: training / validation / testing
-└── envs/
-    └── db_env_v1.py              # One episode = recommend indexes -> measure cost -> reward
-
-stable_baselines/
-└── ppo2/
-    └── ppo2_BALANCE.py           # PPO2 adapted for BALANCE (used by main.py)
-```
-
-**`experiment_results/`, `query_files/`** — checkpoints, generated workloads and benchmark queries:
-
-```
-experiment_results/
-├── cl_save/gen_model/            # Pre-trained CL model checkpoint (.pth)
-├── source/                       # Pre-trained source models for transfer (main.py loads f_s1-f_s3.zip here)
-└── workloads/gen_tpch/           # Generated TPCH training workloads (.pickle)
-
-query_files/
-├── TPCH/                         # TPCH_1.txt - TPCH_22.txt
-└── TPCDS/                        # TPCDS_1.txt - TPCDS_99.txt
-```
-
-Training flow: `main.py` -> `balance/experiment.py` (setup) -> `gym_db` environment -> `stable_baselines/ppo2/ppo2_BALANCE.py` (PPO2), with `src/` supplying the value embedder and `index_selection_evaluation/` the database utilities.
-
-### Example workflow
+### 2. Install
 
 ```
 pip install -r requirements.txt         # Install requirements with pip
-python main.py                          # Run a experiment
 ```
-Experiments can be controlled with the **./experiments/tpch.json** file. For descriptions of the components and functioning, consult our paper.
+
+### 3. Run an experiment
+
+```
+python main.py                          # Run an experiment
+```
+
+Experiments are controlled with the **./experiments/tpch.json** file. The main options include:
+
+| Option | Meaning |
+| --- | --- |
+| `database` | Name of the database to create/use for the benchmark |
+| `workload.benchmark` | `TPCH` or `TPCDS`; queries are read from `query_files/` |
+| `workload.path` | Workload file used for training (see `experiment_results/workloads/`) |
+| `budgets.validation_and_testing` | Storage budgets (MB) under which the advisor must stay |
+| `max_index_width` | Maximum number of columns per index |
+| `workload_embedder.type` | Workload representation, e.g. `PlanEmbedderLSIBOW` |
+| `timesteps` | Total PPO training steps |
+| `validation_frequency` | Steps between validations (test/validation callbacks) |
+
+During training, validation/testing results and model checkpoints (best / moving-average / final) are written to `<result_path>/ID_<experiment id>/` - `experiment_results/ID_Test_Experiment_1/` for the shipped config. TensorBoard logs go to `tensor_log/`:
+
+```
+tensorboard --logdir tensor_log         # Monitor training curves
+```
+
+For descriptions of the components and functioning, consult our paper.
