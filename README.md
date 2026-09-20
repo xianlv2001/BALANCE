@@ -35,57 +35,68 @@ balance/                     closes the RL loop: observation_manager.py builds t
 
 ## Code structure
 
+Grouped by role rather than alphabetically — top-down is also the training flow:
+entry point → RL core → workload knowledge → database toolkit → data & assets.
+
 ```
 BALANCE/
-|
-|-- main.py                       # Entry point: builds the experiment and starts PPO training
-|-- requirements.txt              # Python dependencies
-|-- image.png                     # Architecture figure shown above
-|-- box_line.pickle               # Pre-computed predicate value boxes (used by src/plan_encoding)
-|-- tpcds_lsi.model               # Pre-trained LSI workload model (+ .projection file)
-|
-|-- balance/                      # Core package: experiment setup and RL components
-|   |-- experiment.py             #   Experiment: config, schema, workloads, envs, train/evaluate
-|   |-- configuration_parser.py   #   Parses and validates the JSON experiment configuration
-|   |-- schema.py                 #   Database schema (tables/columns) on PostgreSQL
-|   |-- workload_generator.py     #   Samples training/validation workloads from query_files/
-|   |-- workload_embedder.py      #   Encodes workloads as vectors (plan-based LSI-BOW, SQL)
-|   |-- embedding_utils.py        #   Helpers for pruning queries during embedding
-|   |-- boo.py                    #   Bag of Operators: query plans -> operator sets
-|   |-- observation_manager.py    #   Builds RL observations (embedded plan + cost features)
-|   |-- action_manager.py         #   Index actions: valid actions under the storage budget
-|   |-- reward_calculator.py      #   Reward from cost difference vs. storage consumption
-|   `-- utils.py                  #   Shared utilities
-|
-|-- gym_db/                       # Gym environment for index selection
-|   |-- common.py                 #   EnvironmentType: training / validation / testing
-|   `-- envs/
-|       `-- db_env_v1.py          #   DBEnvV1: one episode = recommend indexes -> measure cost -> reward
-|
-|-- src/                          # Value embedder (multi-source workload knowledge)
-|   |-- parameters.py             #   Global dimensions and IDs of tables/columns/operators
-|   |-- feature_extraction/       #   Feature extraction from plans, predicates, and bitmaps
-|   |-- plan_encoding/            #   Query-plan tree encoding
-|   `-- token_embedding/          #   Word2Vec embedding of query tokens and values
-|
-|-- stable_baselines/             # Bundled OpenAI Baselines (v2)
-|   `-- ppo2/
-|       `-- ppo2_BALANCE.py       #   PPO2 adapted for BALANCE (used by main.py)
-|
-|-- experiments/                  # Experiment configurations
-|   |-- tpch.json                 #   Settings for TPCH
-|   `-- tpcds.json                #   Settings for TPCDS
-|
-|-- experiment_results/           # Saved models and generated workloads
-|   |-- cl_save/gen_model/        #   Pre-trained CL model checkpoint (.pth)
-|   |-- source/                   #   Pre-trained source models for transfer (main.py loads f_s1-f_s3.zip here)
-|   `-- workloads/gen_tpch/       #   Generated TPCH training workloads (.pickle)
-|
-|-- query_files/                  # Raw benchmark query texts
-|   |-- TPCH/                     #   TPCH_1.txt - TPCH_22.txt
-|   `-- TPCDS/                    #   TPCDS_1.txt - TPCDS_99.txt
-|
-`-- index_selection_evaluation/   # Database toolkit: connectors, what-if cost evaluation, benchmark kits
+│
+│  ── Entry & configuration ─────────────────────────────────
+├── main.py                      # Entry point: builds the experiment and starts PPO training
+├── experiments/                 # Experiment configs: tpch.json (TPC-H), tpcds.json (TPC-DS)
+├── requirements.txt             # Python dependencies
+│
+│  ── RL core: environment, actions, observations, reward ────
+├── balance/                     # Core package: experiment setup and RL components
+│   │
+│   │  ── experiment setup ──
+│   ├── experiment.py            #   Central Experiment class: config, schema, workloads, envs
+│   ├── configuration_parser.py  #   Parses and validates the JSON experiment configuration
+│   ├── schema.py                #   Database schema (tables/columns) on PostgreSQL
+│   │
+│   │  ── workload encoding ──
+│   ├── workload_generator.py    #   Samples training/validation workloads from query_files/
+│   ├── workload_embedder.py     #   Encodes workloads as vectors (plan-based LSI-BOW, SQL)
+│   ├── embedding_utils.py       #   Helpers for pruning queries during embedding
+│   ├── boo.py                   #   Bag of Operators: query plans -> operator sets
+│   │
+│   │  ── RL interface ──
+│   ├── observation_manager.py   #   Builds RL observations (embedded plan + cost features)
+│   ├── action_manager.py        #   Valid index actions under the storage budget
+│   ├── reward_calculator.py     #   Reward from cost difference vs. storage consumption
+│   └── utils.py                 #   Shared utilities
+│
+├── gym_db/                      # Gym environment for index selection
+│   ├── common.py                #   EnvironmentType: training / validation / testing
+│   └── envs/db_env_v1.py        #   DBEnvV1: one episode = one workload, one step = one index
+│
+├── stable_baselines/            # Bundled OpenAI Baselines (v2) — only ppo2/ is used
+│   └── ppo2/ppo2_BALANCE.py     #   PPO2 adapted for BALANCE (used by main.py)
+│
+│  ── Workload knowledge: value embedder ────────────────────
+├── src/                         # Turns plans, predicates and column values into features
+│   ├── parameters.py            #   Global dimensions and IDs of tables/columns/operators
+│   ├── feature_extraction/      #   Feature extraction from plans, predicates, and bitmaps
+│   ├── plan_encoding/           #   Query-plan tree encoding
+│   └── token_embedding/         #   Word2Vec embedding of query tokens and values
+│
+│  ── Database toolkit ──────────────────────────────────────
+├── index_selection_evaluation/  # DB toolkit: PostgreSQL connector, HypoPG what-if index
+│                                #   creation, and comparison algorithms (e.g. Extend)
+│
+│  ── Data & assets ─────────────────────────────────────────
+├── experiment_results/          # Saved models and generated workloads
+│   ├── cl_save/gen_model/       #   Pre-trained CL model checkpoint (.pth)
+│   ├── source/                  #   Source models for transfer (place f_s1-f_s3.zip here)
+│   └── workloads/gen_tpch/      #   Generated TPCH training workloads (.pickle)
+│
+├── query_files/                 # Raw benchmark query texts
+│   ├── TPCH/                    #   TPCH_1.txt - TPCH_22.txt
+│   └── TPCDS/                   #   TPCDS_1.txt - TPCDS_99.txt
+│
+├── image.png                    # Architecture figure shown above
+├── box_line.pickle              # Pre-computed predicate value boxes (used by src/plan_encoding)
+└── tpcds_lsi.model              # Pre-trained LSI workload model (+ .projection file)
 ```
 
 ## Getting started
