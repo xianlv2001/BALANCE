@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Experiment runtime output
+tensor_log/
+experiment_results/ID_*/
+experiment_results/caches.pickle.gzip
+
+# User-provided pre-trained source models (see README)
+experiment_results/source/*.zip
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store

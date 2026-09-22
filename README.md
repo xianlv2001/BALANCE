@@ -10,6 +10,7 @@ BALANCE is a deep reinforcement learning (DRL) based **index advisor**. It treat
 - **Benchmarks**: TPC-H and TPC-DS
 - **RL toolkit**: OpenAI Baselines PPO2 (bundled in `stable_baselines/`)
 - **Pre-trained models**: `main.py` loads three source models from `experiment_results/source/` (`f_s1.zip` - `f_s3.zip`); they are not included in the repo, so place your checkpoints there before running
+- **CL checkpoint**: `stable_baselines` reads `experiment_results/cl_save/gen_model/boo_bao_nosame_f_v.pth` when building the policy network, and `main.py` writes new experiment folders and TensorBoard logs under `experiment_results/` and `tensor_log/` (git-ignored)
 
 ## How it works
 
@@ -77,8 +78,7 @@ BALANCE/
 ├── src/                         # Turns plans, predicates and column values into features
 │   ├── parameters.py            #   Global dimensions and IDs of tables/columns/operators
 │   ├── feature_extraction/      #   Feature extraction from plans, predicates, and bitmaps
-│   ├── plan_encoding/           #   Query-plan tree encoding
-│   └── token_embedding/         #   Word2Vec embedding of query tokens and values
+│   └── plan_encoding/           #   Predicate/condition encoding with pre-computed value boxes
 │
 │  ── Database toolkit ──────────────────────────────────────
 ├── index_selection_evaluation/  # DB toolkit: PostgreSQL connector, HypoPG what-if index
@@ -86,7 +86,7 @@ BALANCE/
 │
 │  ── Data & assets ─────────────────────────────────────────
 ├── experiment_results/          # Saved models and generated workloads
-│   ├── cl_save/gen_model/       #   Pre-trained CL model checkpoint (.pth)
+│   ├── cl_save/gen_model/       #   Pre-trained CL checkpoint (.pth, read by stable_baselines)
 │   ├── source/                  #   Source models for transfer (place f_s1-f_s3.zip here)
 │   └── workloads/gen_tpch/      #   Generated TPCH training workloads (.pickle)
 │
