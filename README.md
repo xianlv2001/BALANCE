@@ -8,7 +8,7 @@ BALANCE is a deep reinforcement learning (DRL) based **index advisor**. It treat
 
 - **Tested environment**: PostgreSQL 12.5 with the [HypoPG](https://hypopg.readthedocs.io/) extension (for what-if index cost estimation)
 - **Benchmarks**: TPC-H and TPC-DS
-- **RL toolkit**: OpenAI Baselines PPO2 (bundled in `stable_baselines/`)
+- **RL toolkit**: OpenAI Baselines PPO2 (bundled in `stable_baselines/`, trimmed to the PPO2 stack)
 - **Pre-trained models**: `main.py` loads three source models from `experiment_results/source/` (`f_s1.zip` - `f_s3.zip`); they are not included in the repo, so place your checkpoints there before running
 - **CL checkpoint**: `stable_baselines` reads `experiment_results/cl_save/gen_model/boo_bao_nosame_f_v.pth` when building the policy network, and `main.py` writes new experiment folders and TensorBoard logs under `experiment_results/` and `tensor_log/` (git-ignored)
 
@@ -71,7 +71,7 @@ BALANCE/
 │   ├── common.py                #   EnvironmentType: training / validation / testing
 │   └── envs/db_env_v1.py        #   DBEnvV1: one episode = one workload, one step = one index
 │
-├── stable_baselines/            # Bundled OpenAI Baselines (v2) — only ppo2/ is used
+├── stable_baselines/            # Bundled OpenAI Baselines (v2), trimmed to the PPO2 stack
 │   └── ppo2/ppo2_BALANCE.py     #   PPO2 adapted for BALANCE (used by main.py)
 │
 │  ── Workload knowledge: value embedder ────────────────────
@@ -94,10 +94,13 @@ BALANCE/
 │   ├── TPCH/                    #   TPCH_1.txt - TPCH_22.txt
 │   └── TPCDS/                   #   TPCDS_1.txt - TPCDS_99.txt
 │
-├── image.png                    # Architecture figure shown above
-├── box_line.pickle              # Pre-computed predicate value boxes (used by src/plan_encoding)
-└── tpcds_lsi.model              # Pre-trained LSI workload model (+ .projection file)
+└── image.png                    # Architecture figure shown above
 ```
+
+`box_line.pickle` is a required runtime asset (read by `src/plan_encoding`).
+The LSI model `tpcds_lsi.model` (+ `.projection`) that `balance/workload_embedder.py`
+writes next to the code is generated at runtime and git-ignored, as are
+`tensor_log/` and the per-experiment folders under `experiment_results/`.
 
 ## Getting started
 

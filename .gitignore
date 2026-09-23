@@ -4,6 +4,8 @@ __pycache__/
 
 # Experiment runtime output
 tensor_log/
+tpcds_lsi.model
+tpcds_lsi.model.projection
 experiment_results/ID_*/
 experiment_results/caches.pickle.gzip
 
