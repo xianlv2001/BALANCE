@@ -1,23 +1,10 @@
-from stable_baselines.a2c import A2C
-from stable_baselines.acer import ACER
-from stable_baselines.acktr import ACKTR
-from stable_baselines.deepq import DQN
-from stable_baselines.her import HER
-from stable_baselines.ppo2 import PPO2
-from stable_baselines.td3 import TD3
-from stable_baselines.sac import SAC
+"""Vendored OpenAI Baselines (stable-baselines v2.10.0), trimmed to what BALANCE uses.
 
-# Load mpi4py-dependent algorithms only if mpi is installed.
-try:
-    import mpi4py
-except ImportError:
-    mpi4py = None
-
-if mpi4py is not None:
-    from stable_baselines.ddpg import DDPG
-    from stable_baselines.gail import GAIL
-    from stable_baselines.ppo1 import PPO1
-    from stable_baselines.trpo_mpi import TRPO
-del mpi4py
+Only PPO2 (see ``stable_baselines/ppo2/ppo2_BALANCE.py``) and the shared
+``common``/``bench`` infrastructure are kept; the other algorithm
+implementations of the upstream library were removed.
+"""
+from stable_baselines import logger  # noqa: F401
+from stable_baselines.ppo2 import PPO2  # noqa: F401
 
 __version__ = "2.10.0"
